@@ -3,9 +3,13 @@ from __future__ import unicode_literals
 import six
 from django.apps import apps
 from django.db.models.signals import post_delete, post_save, pre_delete, pre_save
+from django.conf import settings
 
 from ..auth import channel_session, channel_session_user
 from ..channel import Group
+
+if getattr(settings, 'CHANNEL_ASYNC', True):
+    from ..tasks import send_messages_async
 
 CREATE = 'create'
 UPDATE = 'update'
@@ -182,9 +186,14 @@ class Binding(object):
 
         assert self.stream is not None
         message = self.encode(self.stream, payload)
+
         for group_name in group_names:
             group = Group(group_name)
             group.send(message)
+
+            if getattr(settings, 'CHANNEL_ASYNC', True):
+                send_messages_async.apply_async((group_name, message))
+
 
     @classmethod
     def group_names(cls, instance):
